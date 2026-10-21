@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Multiverse — Fixed & Enhanced</title>
+<style>
+  /* ---------- Base & Cursor ---------- */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    height:100vh; overflow:hidden;
+    background: radial-gradient(circle at center,#00000f 15%, #000 100%);
+    cursor: url('https://raw.githubusercontent.com/Lucifer-teche/Rocket-cursor-img/main/Normal.cur'), auto;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    color:#dffcff;
+  }
+  button,#soundControl,canvas { cursor: url('https://raw.githubusercontent.com/Lucifer-teche/Rocket-cursor-img/main/Normal.cur'), auto !important; }
+
+  /* ---------- Containers & UI ---------- */
+  #webGLContainer{width:100%;height:100vh;display:block;position:relative;overflow:hidden}
+  #soundControl{
+    position:fixed; right:20px; bottom:20px; width:52px; height:52px;border-radius:50%;
+    background: radial-gradient(circle at center,#00ffff 0%, #0044ff 70%); box-shadow:0 0 16px #00ffff;
+    display:flex;align-items:center;justify-content:center;z-index:120; user-select:none;
+  }
+  #backButton{position:fixed; left:20px; bottom:20px;padding:10px 14px;border-radius:8px;background:#00ffff;color:#000;border:none;font-weight:700;z-index:120;display:none}
+  #hint{position:fixed; left:20px; top:20px; background:rgba(0,0,0,0.36); padding:10px 12px; border-radius:8px; z-index:120; font-size:13px; max-width:420px;backdrop-filter: blur(6px)}
+  #universeLabel{position:fixed; left:50%; transform:translateX(-50%); top:14px; padding:8px 14px; border-radius:8px; background:rgba(0,0,0,0.35); z-index:120; display:none; font-weight:700}
+  #hud{position:fixed; right:20px; top:18px; z-index:120; background: rgba(0,0,0,0.28); padding:10px 12px; border-radius:8px; backdrop-filter: blur(4px); font-size:13px; text-align:right; color:#dffcff; display:none}
+  #hud .label { font-weight:700; font-size:12px; opacity:0.9 }
+  #hud .value { font-weight:600; font-size:14px; margin-top:6px }
+
+  .holo { position:absolute; transform: translate(-50%, -50%) scale(0.95); pointer-events:none; background: linear-gradient(180deg, rgba(10,20,30,0.16), rgba(0,0,0,0.06)); border: 1px solid rgba(120,220,255,0.14); color: #cffaff; padding: 10px 12px; border-radius: 8px; min-width:180px; font-size:13px; text-align:center; box-shadow: 0 10px 30px rgba(0,0,0,0.6); backdrop-filter: blur(6px); z-index:115; mix-blend-mode: screen; transform-origin:center; transition: transform .18s ease, opacity .18s ease; opacity:0;}
+  .holo .title { font-weight:800; font-size:15px; margin-bottom:6px; color:#eaffff }
+  .holo .desc { font-size:12px; opacity:0.95; line-height:1.2 }
+  .holo.show{opacity:1; transform: translate(-50%,-50%) scale(1)}
+
+  /* small screens */
+  @media (max-width:700px){ #hint{max-width:300px;font-size:12px} #hud{font-size:12px} .holo{min-width:140px;padding:8px 10px} }
+
+  /* lens flare sprite style (hidden HTML fallback if needed) */
+  #flareImg{display:none}
+</style>
+</head>
+<body>
+  <div id="webGLContainer"></div>
+
+  <!-- Audio sources (mystical sci-fi ambient + effects) -->
+  <!-- Ambient: mystical / sci-fi (pixabay) -->
+  <audio id="bgPad" src="https://cdn.pixabay.com/audio/2022/03/15/audio_b7b9fd52e8.mp3" loop></audio>
+  <audio id="whoosh" src="https://cdn.pixabay.com/download/audio/2021/08/05/audio_5f6c8c1c1b.mp3?filename=whoosh-14018.mp3" preload="auto"></audio>
+  <audio id="warp" src="https://cdn.pixabay.com/download/audio/2023/02/09/audio_61a4f9be73.mp3?filename=portal-warp-119745.mp3" preload="auto"></audio>
+  <audio id="engine" src="https://cdn.pixabay.com/download/audio/2021/09/07/audio_2d1b9c9f20.mp3?filename=engine-hum-15631.mp3" loop></audio>
+  <audio id="voice" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_2d8a6bf0a0.mp3?filename=short-robot-voice.mp3" preload="auto"></audio>
+
+  <div id="soundControl" class="sound-off" title="Toggle Sound (ambient)"><div class="icon"><div class="speaker"></div><div class="waves"></div></div></div>
+  <button id="backButton">Back to Multiverse</button>
+  <div id="hint">Hover a glowing core and click to enter. Inside: W/S A/D to fly, Q/E to up/down, hold left-mouse to look, scroll to zoom. Approach planets to reveal their holo info.</div>
+  <div id="universeLabel"></div>
+  <div id="hud"><div class="label">SHIP STATUS</div><div class="value" id="hud-speed">Speed: 0</div><div class="value" id="hud-target">Target: —</div><div class="value" id="hud-dist">Distance: —</div></div>
+
+  <img id="flareImg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABWklEQVR4Xu3XQQ0AMAwDQPr/6Wy3BAx4Q+kzJq9xX+af7QAEJBAgQIECAAAECBAgQIECAAAECwR5g9+g7gYgKQ0au1tjxq0c6Vn8oQHzQ1tuyq8QwgggAACCCCAAAIIIIAAAggg4N4z8Ac2yH9m9tJ4AAAAASUVORK5CYII=" alt="flare">
+
+  <!-- libs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.8.0/gsap.min.js"></script>
+
+<script>
+/* ===============================
+   Multiverse — Fixed + Visuals
+   - sound button fixed (continuous ambient)
+   - warp entry alignment fix
+   - enhanced multiverse visuals (nebula, galaxy sprites, flares)
+   - everything in a single HTML file
+   =============================== */
+
+/* ---------- Texture references (threejs examples public) ---------- */
+const TEXTURES = {
+  earth: "https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg",
+  earthNormal: "https://threejs.org/examples/textures/planets/earth_normal_2048.jpg",
+  earthSpec: "https://threejs.org/examples/textures/planets/earth_specular_2048.jpg",
+  clouds: "https://threejs.org/examples/textures/planets/earth_clouds_1024.png",
+  mars: "https://threejs.org/examples/textures/planets/mars_1024.jpg",
+  jupiter: "https://threejs.org/examples/textures/planets/jupiter.jpg",
+  venus: "https://threejs.org/examples/textures/planets/venus.jpg",
+  moon: "https://threejs.org/examples/textures/planets/moon_1024.jpg"
+};
+
+/* ---------- Scene and Renderer ---------- */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.05, 5000);
+camera.position.set(0, 0, 140);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setClearColor(0x000000, 1);
+document.getElementById('webGLContainer').appendChild(renderer.domElement);
+
+/* ---------- Lights ---------- */
+const ambient = new THREE.AmbientLight(0x666666, 0.9); scene.add(ambient);
+const mainLight = new THREE.PointLight(0xffffff, 1.8, 4000, 2); mainLight.position.set(0,0,200); scene.add(mainLight);
+
+/* ---------- Nebula layers (visual enhancement) ----------
+   We'll create a few large semi-transparent sprite planes (created from canvas gradients)
+------------------------------------------------------------------ */
+function makeNebulaTexture(color1, color2, size=1024){
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createRadialGradient(size/2, size/2, size*0.1, size/2, size/2, size*0.9);
+  grad.addColorStop(0, color1);
+  grad.addColorStop(1, color2);
+  ctx.fillStyle = grad; ctx.fillRect(0,0,size,size);
+  return new THREE.CanvasTexture(c);
+}
+const nebTex1 = makeNebulaTexture('rgba(180,110,255,0.14)', 'rgba(0,0,0,0)');
+const nebTex2 = makeNebulaTexture('rgba(255,160,200,0.12)', 'rgba(0,0,0,0)');
+const nebTex3 = makeNebulaTexture('rgba(100,220,200,0.10)', 'rgba(0,0,0,0)');
+
+function addNebulaPlane(tex, x,y,z, sx, sy, rot){
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent:true, opacity: 0.9, depthWrite: false });
+  const s = new THREE.Sprite(mat);
+  s.position.set(x,y,z);
+  s.scale.set(sx, sy, 1);
+  s.material.rotation = rot || 0;
+  scene.add(s);
+  return s;
+}
+const neb1 = addNebulaPlane(nebTex1, -120, 40, -120, 380, 220, 0.6);
+const neb2 = addNebulaPlane(nebTex2, 160, -30, -200, 300, 180, -0.4);
+const neb3 = addNebulaPlane(nebTex3, 30, 150, -180, 340, 220, 0.2);
+
+/* ---------- Distant galaxy sprites (adds depth) ---------- */
+function makeGalaxySprite(color, size=256){
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const cx = size/2, cy = size/2;
+  const g = ctx.createRadialGradient(cx,cy,1,cx,cy,size/2);
+  g.addColorStop(0, color);
+  g.addColorStop(0.45, 'rgba(255,255,255,0.7)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,size,size);
+  return new THREE.CanvasTexture(c);
+}
+const galTexA = makeGalaxySprite('rgba(255,200,255,0.9)');
+const galTexB = makeGalaxySprite('rgba(200,240,255,0.9)');
+const g1 = addNebulaPlane(galTexA, -240, -80, -300, 260, 160, 0.1);
+const g2 = addNebulaPlane(galTexB, 220, 120, -320, 300, 200, -0.2);
+
+/* ---------- Layered starfields (near/far) ---------- */
+function makeStars(count, spread, size, col, op){
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    pos[i*3] = (Math.random()-0.5)*spread;
+    pos[i*3+1] = (Math.random()-0.5)*spread*0.55;
+    pos[i*3+2] = (Math.random()-0.5)*spread;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const mat = new THREE.PointsMaterial({ color:col, size, transparent:true, opacity:op, depthWrite:false});
+  return new THREE.Points(geo, mat);
+}
+const starsFar = makeStars(7000, 5000, 1.25, 0xffffff, 0.85);
+const starsNear = makeStars(1600, 1800, 1.8, 0xfff7e8, 0.96);
+scene.add(starsFar, starsNear);
+
+/* ---------- Decorative scene core (unchanged) ---------- */
+const sceneCore = new THREE.Mesh(new THREE.SphereGeometry(4.5,64,64), new THREE.MeshBasicMaterial({color:0x03d6e8}));
+scene.add(sceneCore);
+const sceneGlow = new THREE.Mesh(new THREE.SphereGeometry(6.8,64,64), new THREE.MeshBasicMaterial({color:0x03d6e8, transparent:true, opacity:0.09}));
+scene.add(sceneGlow);
+
+/* ---------- Universe overview creation (8 universes) ---------- */
+function createUniverse(x,y,z,color,label){
+  const group = new THREE.Group();
+  const coreMat = new THREE.MeshPhongMaterial({ color, emissive: color, emissiveIntensity:0.35, shininess:24 });
+  const core = new THREE.Mesh(new THREE.SphereGeometry(2,32,32), coreMat);
+  core.userData = { isCore:true, label };
+  group.add(core);
+
+  const ringMat = new THREE.MeshPhongMaterial({ color, emissive: color, emissiveIntensity:0.8, transparent:true, opacity:0.95 });
+  const portal = new THREE.Mesh(new THREE.TorusGeometry(3.3, 0.12, 16, 128), ringMat);
+  portal.rotation.x = Math.PI/2 * (0.95 + Math.random()*0.35);
+  portal.userData = { isPortal:true };
+  core.add(portal);
+
+  const dustGeo = new THREE.BufferGeometry();
+  const dcount = 240;
+  const dpos = new Float32Array(dcount*3);
+  for(let i=0;i<dcount;i++){
+    dpos[i*3] = (Math.random()-0.5)*8;
+    dpos[i*3+1] = (Math.random()-0.5)*4;
+    dpos[i*3+2] = (Math.random()-0.5)*8;
+  }
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dpos,3));
+  const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ size:0.5, transparent:true, opacity:0.14, color }));
+  group.add(dust);
+
+  group.position.set(x,y,z);
+  group.userData = { label };
+  return group;
+}
+
+const universeDefs = [
+  {x:0, y:0, z:0, color:0xfff2a8, label:"Milky Cluster"},
+  {x:140, y:12, z:-90, color:0xff7acc, label:"Aurelia Nebula"},
+  {x:-120, y:18, z:-110, color:0x7ef7d8, label:"Viridian Realm"},
+  {x:60, y:-90, z:80, color:0x9bb7ff, label:"Cerulean Spiral"},
+  {x:-40, y:80, z:-60, color:0xffc88a, label:"Amber Ring"},
+  {x:200, y:-10, z:-40, color:0x8fe0ff, label:"Zephyr Cluster"},
+  {x:-200, y:-40, z:40, color:0xd8a8ff, label:"Noctis Field"},
+  {x:30, y:140, z:-140, color:0xa8ffc9, label:"Ethereal Reach"}
+];
+
+const universes = universeDefs.map(d => { const g = createUniverse(d.x,d.y,d.z,d.color,d.label); scene.add(g); return g; });
+universes.forEach(u=>{
+  const core = u.children.find(c=>c.userData && c.userData.isCore);
+  if(core){
+    core.material.emissiveIntensity = 0.12;
+    const portal = core.children.find(ch=>ch.userData && ch.userData.isPortal);
+    if(portal){ gsap.to(portal.scale, { x:1.28, y:1.28, z:1.28, duration:2.8, repeat:-1, yoyo:true, ease:"sine.inOut", delay:Math.random()*0.8 }); gsap.to(portal.material, { emissiveIntensity:0.95, duration:1.3, repeat:-1, yoyo:true, ease:"sine.inOut", delay:Math.random()*0.6 }); }
+  }
+});
+
+/* ---------- Basic raycaster / pointer ---------- */
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let HOVERED = null;
+window.addEventListener('mousemove', e => { pointer.x = (e.clientX/window.innerWidth)*2 - 1; pointer.y = - (e.clientY/window.innerHeight)*2 + 1; });
+
+/* ---------- Audio handling (fixed) ---------- */
+const bgPad = document.getElementById('bgPad'), whoosh = document.getElementById('whoosh'), warp = document.getElementById('warp'), engine = document.getElementById('engine'), voice = document.getElementById('voice');
+let soundOn = false;
+const soundControl = document.getElementById('soundControl');
+
+/* Make sure buffer/play is attempted after user gesture: click soundControl toggles sound */
+soundControl.addEventListener('click', async () => {
+  // toggle state
+  soundOn = !soundOn;
+  if(soundOn){
+    // set volumes
+    try {
+      bgPad.volume = 0.55;
+      await bgPad.play();
+    } catch(e){
+      console.warn('bgPad play failed (autoplay restriction)', e);
+    }
+    // engine stays paused until movement
+    soundControl.classList.remove('sound-off'); soundControl.classList.add('sound-on');
+  } else {
+    try { bgPad.pause(); engine.pause(); } catch(e){}
+    soundControl.classList.remove('sound-on'); soundControl.classList.add('sound-off');
+  }
+});
+
+/* a simple helper to play short sounds if soundOn */
+function playSfx(sfx, vol=1.0){
+  if(!soundOn) return;
+  try {
+    sfx.volume = vol;
+    sfx.currentTime = 0;
+    sfx.play();
+  } catch(e){ console.warn('sfx play failed', e); }
+}
+
+/* ---------- Texture loader for planets ---------- */
+const loader = new THREE.TextureLoader();
+const planetTextures = {};
+const texKeys = Object.keys(TEXTURES);
+texKeys.forEach(k => {
+  loader.load(TEXTURES[k], t => { planetTextures[k] = t; }, undefined, () => { /* ignore error */ });
+});
+
+/* ---------- Inner universe generator (galaxies / stars / planets) ---------- */
+const innerCollections = new Map();
+
+function spawnInnerUniverse(universe){
+  if(innerCollections.has(universe)) return innerCollections.get(universe);
+
+  const groupRoot = new THREE.Group();
+
+  const galaxyCount = 2 + Math.floor(Math.random()*2); // 2-3
+  for(let g=0; g<galaxyCount; g++){
+    const galaxy = new THREE.Group();
+    galaxy.position.set((Math.random()-0.5)*30, (Math.random()-0.5)*18, (Math.random()-0.5)*30);
+
+    const starsCount = 1 + Math.floor(Math.random()*3); // 1-3
+    for(let s=0; s<starsCount; s++){
+      const star = new THREE.Group();
+      star.position.set((Math.random()-0.5)*8, (Math.random()-0.5)*4, (Math.random()-0.5)*8);
+
+      const starColor = new THREE.Color().setHSL(Math.random()*0.1 + 0.05, 1.0, Math.random()*0.4 + 0.5);
+      const starMat = new THREE.MeshBasicMaterial({ color: starColor.getHex(), emissive: starColor.getHex(), emissiveIntensity: 1 });
+      const starCore = new THREE.Mesh(new THREE.SphereGeometry(0.9 + Math.random()*1.2, 16,16), starMat);
+      star.add(starCore);
+      const localLight = new THREE.PointLight(starColor.getHex(), 1.3, 600, 2);
+      star.add(localLight);
+
+      // moderate planets
+      const planetsCount = 2 + Math.floor(Math.random()*3); // 2-4
+      const orbitBase = 2.4 + Math.random()*0.8;
+      for(let p=0; p<planetsCount; p++){
+        const r = 0.45 + Math.random()*0.9;
+        const pick = Math.random();
+        let chosenTex = null;
+        if(pick < 0.22 && planetTextures.earth) chosenTex = { map: planetTextures.earth, normal: planetTextures.earthNormal, clouds: planetTextures.clouds, kind:'earthlike' };
+        else if(pick < 0.42 && planetTextures.mars) chosenTex = { map: planetTextures.mars, kind:'rocky' };
+        else if(pick < 0.6 && planetTextures.jupiter) chosenTex = { map: planetTextures.jupiter, kind:'gas' };
+        else if(pick < 0.75 && planetTextures.venus) chosenTex = { map: planetTextures.venus, kind:'rocky' };
+        else if(pick < 0.9 && planetTextures.moon) chosenTex = { map: planetTextures.moon, kind:'barren' };
+        else chosenTex = null;
+
+        const geom = new THREE.SphereGeometry(r, 32, 32);
+        let mat;
+        if(chosenTex && chosenTex.kind === 'earthlike'){
+          mat = new THREE.MeshStandardMaterial({ map: chosenTex.map, normalMap: chosenTex.normal, roughness: 0.8, metalness: 0.05 });
+        } else if(chosenTex && chosenTex.map){
+          mat = new THREE.MeshStandardMaterial({ map: chosenTex.map, roughness: 0.85, metalness: 0.02 });
+        } else {
+          const col = new THREE.Color().setHSL(Math.random(), 0.5, 0.5);
+          mat = new THREE.MeshStandardMaterial({ color:col.getHex(), roughness:0.9, metalness:0.01 });
+        }
+
+        const planet = new THREE.Mesh(geom, mat);
+        planet.userData = {
+          orbitRadius: orbitBase + p*1.8 + Math.random()*0.9,
+          angle: Math.random()*Math.PI*2,
+          speed: 0.0014 + Math.random()*0.003,
+          radius: r,
+          name: `P-${Math.floor(Math.random()*9999)}`,
+          holo: generatePlanetBlurb()
+        };
+        planet.position.set(Math.cos(planet.userData.angle)*planet.userData.orbitRadius, (Math.random()-0.5)*0.25, Math.sin(planet.userData.angle)*planet.userData.orbitRadius);
+        if(chosenTex && chosenTex.kind === 'earthlike' && chosenTex.clouds){
+          const cloudMat = new THREE.MeshPhongMaterial({ map: chosenTex.clouds, transparent:true, opacity:0.6, depthWrite:false, side: THREE.DoubleSide });
+          const cloudMesh = new THREE.Mesh(new THREE.SphereGeometry(r*1.02, 32, 32), cloudMat);
+          planet.add(cloudMesh);
+          planet.userData.hasClouds = true;
+        }
+        star.add(planet);
+      } // planets loop
+
+      galaxy.add(star);
+    } // stars loop
+
+    // galaxy ring
+    const ringGeo = new THREE.RingGeometry(6 + Math.random()*2, 6.6 + Math.random()*2.4, 64);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent:true, opacity:0.02, side:THREE.DoubleSide });
+    const ring = new THREE.Mesh(ringGeo, ringMat); ring.rotation.x = Math.PI/2;
+    galaxy.add(ring);
+
+    groupRoot.add(galaxy);
+  } // galaxies
+
+  // ambient dust
+  const bigDust = new THREE.BufferGeometry();
+  const cnt = 420; const buf = new Float32Array(cnt*3);
+  for(let i=0;i<cnt;i++){ buf[i*3] = (Math.random()-0.5)*60; buf[i*3+1] = (Math.random()-0.5)*20; buf[i*3+2] = (Math.random()-0.5)*60; }
+  bigDust.setAttribute('position', new THREE.BufferAttribute(buf,3));
+  const bigDustMat = new THREE.PointsMaterial({ size: 0.7, transparent:true, opacity:0.06, color:0xffffff });
+  const dustPoints = new THREE.Points(bigDust, bigDustMat);
+  groupRoot.add(dustPoints);
+
+  innerCollections.set(universe, groupRoot);
+  return groupRoot;
+}
+
+/* ---------- Warp tunnel visuals ---------- */
+function createWarpTunnel(){
+  const tunnel = new THREE.Group();
+  const seg = 64;
+  const geom = new THREE.CylinderGeometry(0.6, 80, 200, seg, 1, true);
+  const mat = new THREE.MeshBasicMaterial({ color:0x66ddff, transparent:true, opacity:0.06, side:THREE.DoubleSide, depthWrite:false });
+  const mesh = new THREE.Mesh(geom, mat); mesh.rotation.x = Math.PI/2; tunnel.add(mesh);
+  for(let i=0;i<6;i++){
+    const planeGeo = new THREE.PlaneGeometry(200, 8);
+    const planeMat = new THREE.MeshBasicMaterial({ color:0xa8f7ff, transparent:true, opacity:0.05, side:THREE.DoubleSide, depthWrite:false });
+    const p = new THREE.Mesh(planeGeo, planeMat);
+    p.rotation.x = Math.PI/2;
+    p.position.z = (i - 3) * 20;
+    p.scale.y = 3 + Math.random()*2;
+    tunnel.add(p);
+  }
+  tunnel.visible = false; scene.add(tunnel); return tunnel;
+}
+const warpTunnel = createWarpTunnel();
+
+/* ---------- Hologram pool ---------- */
+const holoPool = []; const holoActive = new Map();
+function createHolo(){ const el=document.createElement('div'); el.className='holo'; el.innerHTML=`<div class="title">Unknown</div><div class="desc">—</div>`; document.body.appendChild(el); holoPool.push(el); return el; }
+for(let i=0;i<8;i++) createHolo();
+function getHolo(){ return holoPool.length ? holoPool.pop() : createHolo(); }
+function releaseHolo(el){ el.classList.remove('show'); el.style.opacity=0; el.style.transform='translate(-50%,-50%) scale(.95)'; holoPool.push(el); }
+
+/* ---------- Utilities ---------- */
+function generatePlanetBlurb(){
+  const adjectives = ["molten", "frozen", "verdant", "crystalline", "toxic", "oceanic", "wind-swept", "cloud-enshrouded"];
+  const features = ["rings of glass", "magnetic storms", "floating islands", "frozen geysers", "lava seas", "emerald forests", "silicate sands"];
+  const temps = ["~300K", "~1450K", "~90K", "~800K", "~540K"];
+  const adv = adjectives[Math.floor(Math.random()*adjectives.length)];
+  const feat = features[Math.floor(Math.random()*features.length)];
+  const temp = temps[Math.floor(Math.random()*temps.length)];
+  return `${capitalize(adv)} world notable for ${feat}. Surface temp ${temp}.`;
+}
+function capitalize(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+
+/* ---------- Interaction & flight ---------- */
+const backButton = document.getElementById('backButton'), hintEl = document.getElementById('hint'), universeLabel = document.getElementById('universeLabel');
+const hud = document.getElementById('hud'), hudSpeed = document.getElementById('hud-speed'), hudTarget = document.getElementById('hud-target'), hudDist = document.getElementById('hud-dist');
+
+let inside = false, cameraAnimating = false, currentGroup = null;
+let movement = { forward:false, back:false, left:false, right:false, up:false, down:false };
+let velocity = new THREE.Vector3(0,0,0);
+let yaw = 0, pitch = 0;
+let isMouseDown = false, prevMouse = { x:0, y:0 };
+let baseSpeedFactor = 1.0;
+
+/* Hover cores (overview) */
+function hoverCores(){
+  if(inside || cameraAnimating) return;
+  raycaster.setFromCamera(pointer, camera);
+  const coreMeshes = universes.map(u=>u.children.find(c=>c.userData && c.userData.isCore)).filter(Boolean);
+  const ints = raycaster.intersectObjects(coreMeshes);
+  if(ints.length>0){
+    const obj = ints[0].object;
+    if(HOVERED !== obj){
+      if(HOVERED){ gsap.to(HOVERED.scale, { x:1, y:1, z:1, duration:0.25 }); HOVERED.material.emissiveIntensity = 0.12; }
+      HOVERED = obj;
+      gsap.to(obj.scale, { x:1.35, y:1.35, z:1.35, duration:0.28, ease:"power2.out" });
+      obj.material.emissiveIntensity = 0.85;
+      playSfx(whoosh, 0.9);
+    }
+  } else {
+    if(HOVERED){ gsap.to(HOVERED.scale, { x:1, y:1, z:1, duration:0.25 }); HOVERED.material.emissiveIntensity = 0.12; HOVERED=null; }
+  }
+}
+
+/* Attach inner group to scene */
+function attachInnerToUniverse(universe){
+  const inner = spawnInnerUniverse(universe);
+  let root = scene.getObjectByName("innerUniverseRoot");
+  if(!root){ root = new THREE.Group(); root.name = "innerUniverseRoot"; scene.add(root); }
+  // position inner at universe coords
+  inner.position.copy(universe.position);
+  if(!root.children.includes(inner)) root.add(inner);
+  return inner;
+}
+
+/* ---------- Warp with alignment fix ----------
+   To avoid camera flipping, compute final orientation that looks at the universe center,
+   then set yaw/pitch from that final orientation AFTER warp completes.
+------------------------------------------------------------------ */
+function doWarpIn(universe, onComplete){
+  cameraAnimating = true;
+  const inner = attachInnerToUniverse(universe);
+  warpTunnel.visible = true; warpTunnel.position.copy(camera.position); warpTunnel.rotation.copy(camera.rotation); warpTunnel.scale.set(0.01,0.01,0.01);
+  playSfx(warp, 0.95);
+  const target = universe.position.clone();
+  const start = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+  const end = { x: target.x + 0, y: target.y + 0, z: target.z + 12 };
+  gsap.to(warpTunnel.scale, { x:1, y:1, z:1, duration:1.12, ease:"power2.out" });
+  gsap.to(start, {
+    x:end.x, y:end.y, z:end.z, duration:1.12, ease:"power2.inOut",
+    onUpdate: ()=>{ camera.position.set(start.x,start.y,start.z); camera.lookAt(target); warpTunnel.position.copy(camera.position); },
+    onComplete: ()=>{
+      warpTunnel.visible = false;
+      // crucial: align camera orientation so it faces the universe center with no flip.
+      camera.lookAt(target);
+      // calculate direction vector and set yaw/pitch from it (stable)
+      const dir = new THREE.Vector3(); camera.getWorldDirection(dir); const len = dir.length() || 1;
+      yaw = Math.atan2(dir.x, dir.z);
+      pitch = Math.asin(THREE.MathUtils.clamp(dir.y / len, -0.999, 0.999));
+      cameraAnimating = false;
+      if(onComplete) onComplete(inner);
+    }
+  });
+}
+
+function doWarpOut(onComplete){
+  cameraAnimating = true;
+  warpTunnel.visible = true; warpTunnel.position.copy(camera.position); warpTunnel.rotation.copy(camera.rotation); warpTunnel.scale.set(0.01,0.01,0.01);
+  playSfx(warp, 0.95);
+  const start = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+  const end = { x: 0, y: 0, z: 140 };
+  gsap.to(warpTunnel.scale, { x:1, y:1, z:1, duration:1.12, ease:"power2.out" });
+  gsap.to(start, {
+    x:end.x, y:end.y, z:end.z, duration:1.12, ease:"power2.inOut",
+    onUpdate: ()=>{ camera.position.set(start.x,start.y,start.z); camera.lookAt(new THREE.Vector3(0,0,0)); warpTunnel.position.copy(camera.position); },
+    onComplete: ()=>{
+      warpTunnel.visible = false;
+      cameraAnimating = false;
+      if(onComplete) onComplete();
+    }
+  });
+}
+
+/* Enter / exit flows */
+function enterUniverse(universe){
+  if(inside || cameraAnimating) return;
+  inside = true; currentGroup = universe;
+  universeLabel.style.display='block'; universeLabel.textContent = universe.userData.label || "Universe";
+  backButton.style.display='block'; hintEl.textContent = 'Fly & explore: W/S A/D, Q/E up/down, hold left-mouse to look; approach planets for holograms.';
+  playSfx(voice, 0.9);
+  doWarpIn(universe, (inner)=>{
+    currentGroup.inner = inner;
+    document.getElementById('hud').style.display = 'block';
+    // set yaw/pitch (already set in doWarpIn), keep as stable baseline
+  });
+}
+function exitUniverse(){
+  if(!inside || cameraAnimating) return;
+  inside = false;
+  currentGroup = null;
+  universeLabel.style.display='none'; backButton.style.display='none'; hintEl.textContent = 'Hover a glowing core and click to enter.';
+  document.getElementById('hud').style.display = 'none';
+  playSfx(warp, 0.9);
+  doWarpOut(()=>{ const root = scene.getObjectByName("innerUniverseRoot"); if(root){ while(root.children.length) root.remove(root.children[0]); } });
+}
+backButton.addEventListener('click', exitUniverse);
+
+/* Click to enter when hovering a core */
+window.addEventListener('click', (e)=>{
+  if(cameraAnimating) return;
+  if(HOVERED && !inside){
+    const g = universes.find(u => u.children.includes(HOVERED));
+    if(g){ playSfx(voice, 0.9); enterUniverse(g); }
+  }
+});
+
+/* ---------- Controls (keyboard / mouse) ---------- */
+window.addEventListener('keydown', (e)=>{
+  if(e.code==='KeyW') movement.forward=true;
+  if(e.code==='KeyS') movement.back=true;
+  if(e.code==='KeyA') movement.left=true;
+  if(e.code==='KeyD') movement.right=true;
+  if(e.code==='KeyQ') movement.down=true;
+  if(e.code==='KeyE') movement.up=true;
+  if(e.code==='Escape'){ isMouseDown=false; document.body.style.cursor='default'; }
+});
+window.addEventListener('keyup', (e)=>{
+  if(e.code==='KeyW') movement.forward=false;
+  if(e.code==='KeyS') movement.back=false;
+  if(e.code==='KeyA') movement.left=false;
+  if(e.code==='KeyD') movement.right=false;
+  if(e.code==='KeyQ') movement.down=false;
+  if(e.code==='KeyE') movement.up=false;
+});
+
+/* Mouse drag look */
+renderer.domElement.addEventListener('mousedown', (e)=>{
+  if(e.button===0 && inside && !cameraAnimating){ isMouseDown=true; prevMouse.x=e.clientX; prevMouse.y=e.clientY; document.body.style.cursor='grabbing'; }
+});
+window.addEventListener('mouseup', ()=>{ isMouseDown=false; document.body.style.cursor='default'; });
+window.addEventListener('mousemove', (e)=>{
+  pointer.x = (e.clientX/window.innerWidth)*2 - 1; pointer.y = - (e.clientY/window.innerHeight)*2 + 1;
+  if(isMouseDown && inside && !cameraAnimating){
+    const dx = e.clientX - prevMouse.x; const dy = e.clientY - prevMouse.y;
+    const sens = 0.0028;
+    yaw -= dx * sens; pitch -= dy * sens;
+    pitch = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, pitch));
+    prevMouse.x = e.clientX; prevMouse.y = e.clientY;
+  }
+});
+
+/* Scroll wheel adjusts cruise factor or overview zoom */
+window.addEventListener('wheel', (e)=>{
+  if(inside && !cameraAnimating){
+    const delta = e.deltaY * 0.0008;
+    baseSpeedFactor = THREE.MathUtils.clamp(baseSpeedFactor + delta, 0.25, 3.2);
+  } else if(!cameraAnimating){
+    camera.position.z += e.deltaY * 0.06;
+    camera.position.z = Math.max(60, Math.min(450, camera.position.z));
+  }
+});
+
+/* ---------- Holograms handling ---------- */
+function tryShowHolosNearCamera(){
+  if(!inside || !currentGroup || !currentGroup.inner) return;
+  const inner = currentGroup.inner;
+  inner.traverse(obj=>{
+    if(obj.isMesh && obj.geometry && obj.geometry.type==="SphereGeometry" && obj.userData && obj.userData.holo){
+      const wp = new THREE.Vector3(); obj.getWorldPosition(wp);
+      const d = camera.position.distanceTo(wp);
+      if(d < 8 + (obj.userData.radius || 0)){
+        if(!holoActive.has(obj.uuid)){
+          const el = getHolo();
+          el.querySelector('.title').textContent = obj.userData.name || "Planet";
+          el.querySelector('.desc').textContent = obj.userData.holo || "—";
+          el.classList.add('show');
+          holoActive.set(obj.uuid, { el, obj });
+        }
+      } else {
+        if(holoActive.has(obj.uuid)){
+          const rec = holoActive.get(obj.uuid);
+          releaseHolo(rec.el);
+          holoActive.delete(obj.uuid);
+        }
+      }
+    }
+  });
+}
+function updateHolos(){
+  for(const [k, rec] of holoActive.entries()){
+    const wp = new THREE.Vector3(); rec.obj.getWorldPosition(wp);
+    const v = wp.clone().project(camera);
+    const x = (v.x + 1)/2 * window.innerWidth;
+    const y = (-v.y + 1)/2 * window.innerHeight;
+    if(v.z > 1 || v.z < -1){
+      rec.el.style.opacity='0'; rec.el.classList.remove('show');
+    } else {
+      rec.el.style.left = x + 'px'; rec.el.style.top = (y - 40) + 'px'; rec.el.style.opacity='1'; rec.el.classList.add('show');
+    }
+  }
+}
+
+/* ---------- Animate loop ---------- */
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  // parallax star rotation
+  starsFar.rotation.y += 0.00008;
+  starsNear.rotation.y += 0.00035;
+  // drift nebula slowly for life
+  neb1.material.rotation = (neb1.material.rotation || 0) + 0.00002;
+  neb2.material.rotation = (neb2.material.rotation || 0) - 0.000015;
+  neb3.material.rotation = (neb3.material.rotation || 0) + 0.000018;
+
+  universes.forEach(u=>{
+    u.rotation.y += 0.0006;
+    u.children.forEach(ch=>{ if(ch.type === "Points") ch.rotation.y += 0.0006; });
+  });
+
+  if(!inside && !cameraAnimating) hoverCores();
+
+  if(inside && currentGroup && currentGroup.inner && !cameraAnimating){
+    const inner = currentGroup.inner;
+    inner.traverse(obj=>{
+      if(obj.userData && obj.userData.orbitRadius !== undefined){
+        obj.userData.angle += obj.userData.speed;
+        const parentPos = obj.parent ? obj.parent.position.clone() : new THREE.Vector3();
+        obj.position.x = Math.cos(obj.userData.angle) * obj.userData.orbitRadius + parentPos.x;
+        obj.position.z = Math.sin(obj.userData.angle) * obj.userData.orbitRadius + parentPos.z;
+        obj.rotation.y += 0.002;
+      }
+      if(obj.type === "Points") obj.rotation.y += 0.0007;
+    });
+
+    // orientation
+    const targetQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+    camera.quaternion.slerp(targetQuat, 0.16);
+
+    const forward = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    const right = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+    const up = new THREE.Vector3(0,1,0);
+    let desired = new THREE.Vector3(0,0,0);
+    if(movement.forward) desired.add(forward);
+    if(movement.back) desired.add(forward.clone().negate());
+    if(movement.left) desired.add(right.clone().negate());
+    if(movement.right) desired.add(right);
+    if(movement.up) desired.add(up);
+    if(movement.down) desired.add(up.clone().negate());
+
+    if(desired.length() > 0){
+      desired.normalize();
+      const center = new THREE.Vector3().copy(currentGroup.position);
+      const dfc = camera.position.distanceTo(center);
+      const speedScale = 1 + Math.min(3, dfc / 60);
+      velocity.copy(desired.multiplyScalar(0.9 * baseSpeedFactor * speedScale));
+      if(soundOn && engine.paused){ engine.currentTime = 0; engine.play(); }
+    } else {
+      velocity.multiplyScalar(0.92);
+      if(soundOn && engine && velocity.length() < 0.02){ engine.pause(); }
+    }
+    camera.position.add(velocity.clone().multiplyScalar(dt * 60));
+
+    tryShowHolosNearCamera();
+    updateHolos();
+
+    // HUD nearest planet
+    let nearest = null; let nd = Infinity;
+    currentGroup.inner.traverse(obj=>{
+      if(obj.userData && obj.userData.holo){
+        const wp = new THREE.Vector3(); obj.getWorldPosition(wp);
+        const d = camera.position.distanceTo(wp);
+        if(d < nd){ nd = d; nearest = obj; }
+      }
+    });
+    if(nearest){ hud.style.display='block'; hudSpeed.textContent = `Speed: ${(velocity.length()*10).toFixed(1)} u/s`; hudTarget.textContent = `Target: ${nearest.userData.name || 'Planet'}`; hudDist.textContent = `Distance: ${nd.toFixed(1)} u`; }
+    else hudSpeed.textContent = `Speed: ${(velocity.length()*10).toFixed(1)} u/s`;
+  } else if(!inside && !cameraAnimating){
+    const desiredX = pointer.x * 18;
+    const desiredY = pointer.y * 14;
+    camera.position.x += (desiredX - camera.position.x) * 0.04;
+    camera.position.y += (desiredY - camera.position.y) * 0.04;
+    camera.lookAt(new THREE.Vector3(0,0,0));
+
+    // gently animate nebulas rotation (via sprite.material.rotation)
+    // remove any holo elements
+    for(const [k,rec] of holoActive.entries()){ releaseHolo(rec.el); holoActive.delete(k); }
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+/* ---------- Resize ---------- */
+window.addEventListener('resize', ()=>{ camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+
+/* ---------- Periodic hover check ---------- */
+setInterval(()=>{ if(!inside && !cameraAnimating) hoverCores(); }, 80);
+
+/* ---------- Initialize UI states ---------- */
+document.getElementById('hint').textContent = 'Hover a glowing core and click to enter.';
+universes.forEach(u=>{ const core = u.children.find(c=>c.userData && c.userData.isCore); if(core) core.material.emissiveIntensity = 0.12; });
+
+/* ---------- End of file: Enjoy! ---------- */
+/* If any console errors appear, paste them and I'll patch quickly. */
+</script>
+</body>
+</html>
